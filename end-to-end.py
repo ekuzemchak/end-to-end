@@ -18,8 +18,11 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 """
-Usage:  end-to-end.py  [test names] [-harness]
+Usage:  end-to-end.py  [test names] [-harness | -testplan]
 If no test names are given, all the tests in the end-to-end/ directory are run
+
+Creating a test plan:
+- If '-testplan' is given, a test plan is written with the readme.txt, input and output files
 
 Running:
 For each test, the following actions are performed
@@ -41,6 +44,7 @@ def main():
     endtoenddir = os.path.join(thisdir, 'end-to-end')
     tempdir = os.path.join(thisdir, 'temp')
     harness = False
+    testplan = False
     
     ### CONFIGURATION SETTINGS ###
     # The application to test - the path is relative to tempdir
@@ -52,31 +56,49 @@ def main():
 
     failures = []
 
-    if len(sys.argv) > 1:
+    args = sys.argv[1:]
+    if '-harness' in args:
+        harness = True
+        args.remove('-harness')
+
+    if '-testplan' in args:
+        testplan = True
+        args.remove('-testplan')
+
+    if len(args) > 0:
         # Run those tests given in the arguments
-        testdirs = sys.argv[1:]
+        testdirs = args
     else:
         # Run all the tests in the end-to-end dir
         testdirs = [d for d in os.listdir(endtoenddir) if os.path.isdir(os.path.join(endtoenddir, d))]
 
     testdirs.sort()
+    
+    if harness and testplan:
+        print "* -harness and -testplan cannot both be given *"
+        exit()
+
     if '-harness' in testdirs:
-        harness = True
         print '**************************'
         print '*  Harnesessing Goldens  *'
         print '**************************'
-            
+    
+    if '-testplan' in testdirs:
+        print '***************'
+        print '*  Test Plan  *'
+        print '***************'
+
     for test in testdirs:
-        if test == '-harness':
-            continue
-            
         if not os.path.exists(os.path.join(endtoenddir, test, 'readme.txt')):
             print '*** Invalid test name - no readme.txt found in: ' + test
             continue
         
         print ''
         print '**************************'
-        print '*  Executing: ' + test
+        if testplan:
+            print '*  Test: ' + test
+        else:
+            print '*  Executing: ' + test
 
         # If the file contains a readme - echo it here
         if (os.path.exists(os.path.join(endtoenddir, test, 'readme.txt'))):
@@ -104,55 +126,86 @@ def main():
         for file in glob.glob(os.path.join(endtoenddir, test, 'scripts') + '/*'):
             shutil.copy(file, tempdir)
 
-        # Run the runtest.py script from temp/ with testapplication as argv[1]
-        testfile = '"' + os.path.join(tempdir, 'runtest.py') + '"'
-        cmd = testfile + ' ' + testapplication
-        os.chdir(tempdir)
-        #print cmd
-        stat = os.system('"' + cmd + '"')
-        
-        # Harness support
-        if harness == True:
-            # For each file in Golden, copy the same file from temp/ to Golden/
-            for file in glob.glob(os.path.join(endtoenddir, test, 'golden') + '/*'):
-                fname = os.path.split(file)[1]
-                print '*  Harnessing: ' + fname
-                shutil.copy(os.path.join(tempdir, fname), file) 
+        if testplan:
+            # Echo the input files which now exist in temp/
+            for filename in glob.glob(tempdir + '/*'):
+                print '*'
+                print '*  Input File: ' + filename
+                file = open(filename, 'r')
+                try:
+                    for line in file:
+                        # Print each line
+                        print '*      ' + line.rstrip()
+                finally:
+                    file.close()   
+
+            # Echo the golden files
+            for filename in glob.glob(os.path.join(endtoenddir, test, 'golden') + '/*'):  
+                print '*'
+                print '*  Golden File: ' + filename
+                file = open(filename, 'r')
+                try:
+                    for line in file:
+                        # Print each line
+                        print '*      ' + line.rstrip()
+                finally:
+                    file.close()                  
+            print '**************************'
+        else:
+            # Run the runtest.py script from temp/ with testapplication as argv[1]
+            testfile = '"' + os.path.join(tempdir, 'runtest.py') + '"'
+            cmd = testfile + ' ' + testapplication
+            os.chdir(tempdir)
+            #print cmd
+            stat = os.system('"' + cmd + '"')
             
-        
-        if stat == 0 or stat == 4:
-            # For each file in Golden, compare the file with the same file in temp/
-            passed = True
-            for file in glob.glob(os.path.join(endtoenddir, test, 'golden') + '/*'):
-                fname = os.path.split(file)[1]
-                cmd = compare +  ' "' + os.path.join(tempdir, fname) + '"  "' + file + '"'
-                print '*  Comparing: ' + os.path.split(file)[1]
+            # Harness support
+            if harness == True:
+                # For each file in Golden, copy the same file from temp/ to Golden/
+                for file in glob.glob(os.path.join(endtoenddir, test, 'golden') + '/*'):
+                    fname = os.path.split(file)[1]
+                    print '*  Harnessing: ' + fname
+                    shutil.copy(os.path.join(tempdir, fname), file) 
+                
+            
+            if stat == 0 or stat == 4:
+                # For each file in Golden, compare the file with the same file in temp/
+                passed = True
+                for file in glob.glob(os.path.join(endtoenddir, test, 'golden') + '/*'):
+                    fname = os.path.split(file)[1]
+                    cmd = compare +  ' "' + os.path.join(tempdir, fname) + '"  "' + file + '"'
+                    print '*  Comparing: ' + os.path.split(file)[1]
 
-                #print cmd
-                if os.name == 'posix':
-                    if os.system(cmd) != 0:
-                            passed = False
+                    #print cmd
+                    if os.name == 'posix':
+                        if os.system(cmd) != 0:
+                                passed = False
+                    else:
+                        if os.system('"' + cmd + '"') != 0:
+                                passed = False
+
+                if passed:
+                    print '*  PASSED: ' + test
+                    print '**************************'
                 else:
-                    if os.system('"' + cmd + '"') != 0:
-                            passed = False
-
-            if passed:
-                print '*  PASSED: ' + test
-                print '**************************'
+                    print '*  FAILED: ' + test
+                    print '**************************'
+                    failures.append(test)
             else:
-                print '*  FAILED: ' + test
+                print '* EXCEPTION EXECUTING TEST'
                 print '**************************'
                 failures.append(test)
-        else:
-            print '* EXCEPTION EXECUTING TEST'
-            print '**************************'
-            failures.append(test)
                 
     print ''
-    if len(failures) > 0:
-        print '*** TEST FAILURES: ' + ', '.join(failures) + ' ****'
+    if testplan:
+        print '**********************'
+        print '*  End of Test Plan  *'
+        print '**********************'
     else:
-         print '*** ALL TESTS PASSED ****'
+        if len(failures) > 0:
+            print '*** TEST FAILURES: ' + ', '.join(failures) + ' ****'
+        else:
+             print '*** ALL TESTS PASSED ****'
     
 
 if __name__ == "__main__":
