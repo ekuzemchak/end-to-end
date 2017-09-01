@@ -59,6 +59,7 @@ def main():
         # Run all the tests in the end-to-end dir
         testdirs = [d for d in os.listdir(endtoenddir) if os.path.isdir(os.path.join(endtoenddir, d))]
 
+    testdirs.sort()
     if '-harness' in testdirs:
         harness = True
         print '**************************'
